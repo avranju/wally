@@ -7,10 +7,9 @@ extern crate structopt;
 extern crate url;
 
 use std::fs::File;
-use std::num::ParseIntError;
 
 use rand::{thread_rng, Rng};
-use reqwest::{Client, Error as ReqwestError};
+use reqwest::Client;
 use structopt::StructOpt;
 use url::Url;
 
@@ -28,25 +27,6 @@ struct Opt {
 
     #[structopt(short = "h", long = "height")]
     height: u32,
-}
-
-#[derive(Debug)]
-enum Error {
-    WallpaperError(String),
-    Http(ReqwestError),
-    IntParse(ParseIntError),
-}
-
-impl From<ReqwestError> for Error {
-    fn from(err: ReqwestError) -> Error {
-        Error::Http(err)
-    }
-}
-
-impl From<ParseIntError> for Error {
-    fn from(err: ParseIntError) -> Error {
-        Error::IntParse(err)
-    }
 }
 
 #[derive(Deserialize)]
@@ -81,7 +61,7 @@ fn get_popular_wallpapers(
     width: u32,
     height: u32,
     page: u32,
-) -> Result<Vec<Wallpaper>, Error> {
+) -> Vec<Wallpaper> {
     let url = format!(
         "{}&width={}&height={}&page={}",
         base_url(api_key, "popular"),
@@ -90,36 +70,25 @@ fn get_popular_wallpapers(
         page
     );
 
-    let response: WallpapersResponse = client.get(&url).send()?.json()?;
-    if response.success {
-        Ok(response.wallpapers.unwrap())
-    } else {
-        Err(Error::WallpaperError(
-            response.error.unwrap_or("API Error".to_string()),
-        ))
+    let response: WallpapersResponse = client.get(&url).send().unwrap().json().unwrap();
+    if !response.success {
+        panic!(response.error.unwrap());
     }
+    response.wallpapers.unwrap()
 }
 
-fn get_popular_wallpaper_count(
-    client: &Client,
-    api_key: &str,
-    width: u32,
-    height: u32,
-) -> Result<u32, Error> {
+fn get_popular_wallpaper_count(client: &Client, api_key: &str, width: u32, height: u32) -> u32 {
     let url = format!(
         "{}&width={}&height={}",
         base_url(api_key, "popular_count"),
         width,
         height
     );
-    let response: WallpaperCountResponse = client.get(&url).send()?.json()?;
-    if response.success {
-        Ok(response.count.unwrap().parse()?)
-    } else {
-        Err(Error::WallpaperError(
-            response.error.unwrap_or("API Error".to_string()),
-        ))
+    let response: WallpaperCountResponse = client.get(&url).send().unwrap().json().unwrap();
+    if !response.success {
+        panic!(response.error.unwrap());
     }
+    response.count.unwrap().parse().unwrap()
 }
 
 fn main() {
@@ -128,7 +97,7 @@ fn main() {
 
     // first get count of popular wallpapers
     let client = Client::new();
-    let count = get_popular_wallpaper_count(&client, &opt.api_key, opt.width, opt.height).unwrap();
+    let count = get_popular_wallpaper_count(&client, &opt.api_key, opt.width, opt.height);
 
     // pick a wallpaper at random
     let mut rng = thread_rng();
@@ -136,8 +105,7 @@ fn main() {
 
     // get the page which has the selected wallpaper
     let page = (index as f32 / IMAGES_PER_PAGE).ceil() as u32;
-    let wallpapers =
-        get_popular_wallpapers(&client, &opt.api_key, opt.width, opt.height, page).unwrap();
+    let wallpapers = get_popular_wallpapers(&client, &opt.api_key, opt.width, opt.height, page);
 
     // download the wallpaper
     let entry = &wallpapers[(index % IMAGES_PER_PAGE as u32) as usize];
